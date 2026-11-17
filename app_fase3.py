@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from scipy import stats
-from sklearn.metrics import mean_squared_error
 
 # =====================================================
 # 1. CONFIGURACION GENERAL
@@ -16,8 +15,7 @@ from sklearn.metrics import mean_squared_error
 st.set_page_config(
     page_title="Monitoreo Agrícola",
     page_icon="🌱",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # =====================================================
@@ -41,7 +39,6 @@ st.markdown("""
 .subtitle {
     color: #607568;
     font-size: 16px;
-    margin-top: 5px;
 }
 
 .section-title {
@@ -55,22 +52,6 @@ div[data-testid="stMetric"] {
     padding: 18px;
     border-radius: 12px;
     border: 1px solid #dce8dc;
-}
-
-div.stButton > button,
-div.stFormSubmitButton > button {
-    background-color: #267346;
-    color: white;
-    border-radius: 9px;
-    border: none;
-    font-weight: 600;
-    padding: 10px 20px;
-}
-
-div.stButton > button:hover,
-div.stFormSubmitButton > button:hover {
-    background-color: #174e2d;
-    color: white;
 }
 
 </style>
@@ -87,8 +68,8 @@ st.markdown(
 )
 
 st.markdown(
-    '<p class="subtitle">Sistema inteligente de análisis y '
-    'predicción del rendimiento de parcelas agrícolas</p>',
+    '<p class="subtitle">Sistema de análisis del rendimiento '
+    'de parcelas agrícolas mediante regresión lineal múltiple</p>',
     unsafe_allow_html=True
 )
 
@@ -96,7 +77,7 @@ st.divider()
 
 
 # =====================================================
-# 4. CARGA DEL DATASET
+# 4. CARGA Y LIMPIEZA DEL DATASET
 # =====================================================
 
 @st.cache_data
@@ -131,26 +112,22 @@ try:
 
     # Variables necesarias
 
-    columnas = [
-        "volumen_riego",
-        "fertilizante_kg",
-        columna_temperatura,
-        "rendimiento_ton"
-    ]
-
-    if "tipo_tratamiento" in df.columns:
-        columnas.append("tipo_tratamiento")
-
-    df = df[columnas].copy()
-
-    # Limpiar datos numéricos
-
     columnas_numericas = [
         "volumen_riego",
         "fertilizante_kg",
         columna_temperatura,
         "rendimiento_ton"
     ]
+
+    if "tipo_tratamiento" not in df.columns:
+        st.error("No se encontró la columna tipo_tratamiento.")
+        st.stop()
+
+    df = df[
+        columnas_numericas + ["tipo_tratamiento"]
+    ].copy()
+
+    # Limpiar datos numéricos
 
     df[columnas_numericas] = df[columnas_numericas].apply(
         pd.to_numeric,
@@ -160,12 +137,20 @@ try:
     df = df.replace(
         [np.inf, -np.inf],
         np.nan
-    ).dropna(
+    )
+
+    df = df.dropna(
         subset=columnas_numericas
     )
 
-    if len(df) < 4:
-        st.error("No hay suficientes registros para entrenar el modelo.")
+    df["tipo_tratamiento"] = (
+        df["tipo_tratamiento"]
+        .fillna("Sin dato")
+        .astype(str)
+    )
+
+    if len(df) < 5:
+        st.error("No hay suficientes registros para el análisis.")
         st.stop()
 
 
@@ -189,618 +174,375 @@ try:
 
     predicciones = modelo.predict(X_modelo)
 
-    residuos = modelo.resid
-
-    rmse = np.sqrt(
-        mean_squared_error(Y, predicciones)
-    )
+    residuos = Y - predicciones
 
 
     # =================================================
-    # 6. BARRA LATERAL
-    # =================================================
-
-    st.sidebar.title("🌿 Panel de control")
-
-    st.sidebar.success(
-        "Dataset cargado correctamente"
-    )
-
-    st.sidebar.write("### Información del sistema")
-
-    st.sidebar.write(
-        f"**Registros:** {len(df)}"
-    )
-
-    st.sidebar.write(
-        "**Modelo:** Regresión lineal múltiple"
-    )
-
-    st.sidebar.write(
-        f"**Temperatura:** {columna_temperatura}"
-    )
-
-    st.sidebar.divider()
-
-    st.sidebar.write("### Rangos de las variables")
-
-    for variable in variables:
-
-        minimo = df[variable].min()
-        maximo = df[variable].max()
-
-        st.sidebar.write(f"**{variable}**")
-
-        st.sidebar.caption(
-            f"{minimo:.2f} - {maximo:.2f}"
-        )
-
-
-    # =================================================
-    # 7. INDICADORES DEL MODELO
+    # 6. TARJETAS KPI
     # =================================================
 
     st.markdown(
-        '<p class="section-title">📊 Indicadores del modelo</p>',
+        '<p class="section-title">📊 Indicadores principales</p>',
         unsafe_allow_html=True
     )
 
-    c1, c2, c3, c4 = st.columns(4)
+    rendimiento_promedio = df["rendimiento_ton"].mean()
 
-    c1.metric(
-        "Parcelas analizadas",
-        len(df)
+    r2_ajustado = modelo.rsquared_adj
+
+    p_valor = modelo.f_pvalue
+
+    k1, k2, k3 = st.columns(3)
+
+    k1.metric(
+        "🌾 Rendimiento promedio global",
+        f"{rendimiento_promedio:.2f} ton/ha"
     )
 
-    c2.metric(
-        "R²",
-        f"{modelo.rsquared:.4f}"
+    k2.metric(
+        "📈 R² ajustado del modelo",
+        f"{r2_ajustado * 100:.2f}%"
     )
 
-    c3.metric(
-        "R² ajustado",
-        f"{modelo.rsquared_adj:.4f}"
-    )
-
-    c4.metric(
-        "RMSE",
-        f"{rmse:.4f}"
+    k3.metric(
+        "🧪 P-valor de la prueba inferencial",
+        f"{p_valor:.3e}"
     )
 
     st.caption(
-        "Indicadores calculados utilizando los registros del dataset."
+        "El p-valor corresponde a la prueba F de significancia global "
+        "del modelo de regresión."
     )
 
     st.divider()
 
 
     # =================================================
-    # 8. PANEL DE DIAGNOSTICO: CUATRO GRAFICAS
+    # 7. CONTROLES INTERACTIVOS
     # =================================================
 
     st.markdown(
-        '<p class="section-title">📉 Panel de diagnóstico visual</p>',
+        '<p class="section-title">🎛️ Filtros de datos</p>',
+        unsafe_allow_html=True
+    )
+
+    filtro1, filtro2 = st.columns(2)
+
+    with filtro1:
+
+        tratamientos = sorted(
+            df["tipo_tratamiento"].unique().tolist()
+        )
+
+        tratamientos_seleccionados = st.multiselect(
+            "Seleccionar tipo de tratamiento",
+            options=tratamientos,
+            default=tratamientos
+        )
+
+    with filtro2:
+
+        minimo = float(df["rendimiento_ton"].min())
+
+        maximo = float(df["rendimiento_ton"].max())
+
+        rango_rendimiento = st.slider(
+            "Rango de rendimiento (ton/ha)",
+            min_value=minimo,
+            max_value=maximo,
+            value=(minimo, maximo),
+            step=0.1
+        )
+
+    # Aplicar filtros
+
+    df_filtrado = df[
+        (df["tipo_tratamiento"].isin(tratamientos_seleccionados)) &
+        (df["rendimiento_ton"].between(
+            rango_rendimiento[0],
+            rango_rendimiento[1]
+        ))
+    ].copy()
+
+    st.write(
+        f"**Registros seleccionados:** {len(df_filtrado)} de {len(df)}"
+    )
+
+    if df_filtrado.empty:
+
+        st.warning(
+            "No existen registros con los filtros seleccionados."
+        )
+
+        st.stop()
+
+    st.divider()
+
+
+    # =================================================
+    # 8. CUATRO GRAFICAS EN CUADRICULA 2 X 2
+    # =================================================
+
+    st.markdown(
+        '<p class="section-title">📉 Análisis y diagnóstico visual</p>',
         unsafe_allow_html=True
     )
 
     st.write(
-        "Análisis estadístico de las variables y del comportamiento "
-        "del modelo de regresión lineal múltiple."
-    )
-
-    fig, axes = plt.subplots(
-        2, 2,
-        figsize=(15, 10)
+        "Las gráficas se actualizan automáticamente "
+        "al modificar los filtros."
     )
 
 
     # -------------------------------------------------
-    # GRAFICA 1: MATRIZ DE CORRELACION DE PEARSON
+    # GRAFICA 1: CORRELACION DE PEARSON
     # -------------------------------------------------
 
-    datos_correlacion = df[
-        [
-            "volumen_riego",
-            "fertilizante_kg",
-            columna_temperatura,
-            "rendimiento_ton"
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        fig1, ax1 = plt.subplots(figsize=(7, 5))
+
+        datos_correlacion = df_filtrado[
+            columnas_numericas
         ]
-    ]
 
-    correlacion = datos_correlacion.corr(
-        method="pearson"
-    )
+        correlacion = datos_correlacion.corr(
+            method="pearson"
+        )
 
-    sns.heatmap(
-        correlacion,
-        annot=True,
-        cmap="YlGn",
-        fmt=".2f",
-        linewidths=0.5,
-        ax=axes[0, 0]
-    )
+        sns.heatmap(
+            correlacion,
+            annot=True,
+            cmap="YlGn",
+            fmt=".2f",
+            linewidths=0.5,
+            ax=ax1
+        )
 
-    axes[0, 0].set_title(
-        "1. Matriz de correlación de Pearson",
-        fontweight="bold"
-    )
+        ax1.set_title(
+            "1. Matriz de correlación de Pearson",
+            fontweight="bold"
+        )
+
+        plt.tight_layout()
+
+        st.pyplot(
+            fig1,
+            use_container_width=True
+        )
+
+        plt.close(fig1)
 
 
     # -------------------------------------------------
     # GRAFICA 2: REGRESION PARCIAL
     # -------------------------------------------------
 
-    controles = sm.add_constant(
-        df[
-            [
-                "fertilizante_kg",
-                columna_temperatura
-            ]
-        ]
-    )
+    with col2:
 
-    modelo_riego = sm.OLS(
-        df["volumen_riego"],
-        controles
-    ).fit()
+        fig2, ax2 = plt.subplots(figsize=(7, 5))
 
-    modelo_rendimiento = sm.OLS(
-        df["rendimiento_ton"],
-        controles
-    ).fit()
+        if len(df_filtrado) >= 5:
 
-    residuos_riego = modelo_riego.resid
+            controles = sm.add_constant(
+                df_filtrado[
+                    [
+                        "fertilizante_kg",
+                        columna_temperatura
+                    ]
+                ]
+            )
 
-    residuos_rendimiento = modelo_rendimiento.resid
+            modelo_riego = sm.OLS(
+                df_filtrado["volumen_riego"],
+                controles
+            ).fit()
 
-    axes[0, 1].scatter(
-        residuos_riego,
-        residuos_rendimiento,
-        alpha=0.7
-    )
+            modelo_rendimiento = sm.OLS(
+                df_filtrado["rendimiento_ton"],
+                controles
+            ).fit()
 
-    pendiente, intercepto = np.polyfit(
-        residuos_riego,
-        residuos_rendimiento,
-        1
-    )
+            residuos_riego = modelo_riego.resid
 
-    x_linea = np.linspace(
-        residuos_riego.min(),
-        residuos_riego.max(),
-        100
-    )
+            residuos_rendimiento = modelo_rendimiento.resid
 
-    axes[0, 1].plot(
-        x_linea,
-        pendiente * x_linea + intercepto,
-        linestyle="--"
-    )
+            ax2.scatter(
+                residuos_riego,
+                residuos_rendimiento,
+                alpha=0.7
+            )
 
-    axes[0, 1].set_title(
-        "2. Regresión parcial: riego y rendimiento",
-        fontweight="bold"
-    )
+            if residuos_riego.nunique() > 1:
 
-    axes[0, 1].set_xlabel(
-        "Riego ajustado"
-    )
+                pendiente, intercepto = np.polyfit(
+                    residuos_riego,
+                    residuos_rendimiento,
+                    1
+                )
 
-    axes[0, 1].set_ylabel(
-        "Rendimiento ajustado"
-    )
+                x_linea = np.linspace(
+                    residuos_riego.min(),
+                    residuos_riego.max(),
+                    100
+                )
 
-    axes[0, 1].grid(alpha=0.25)
+                ax2.plot(
+                    x_linea,
+                    pendiente * x_linea + intercepto,
+                    linestyle="--"
+                )
+
+            ax2.set_xlabel("Riego ajustado")
+
+            ax2.set_ylabel("Rendimiento ajustado")
+
+            ax2.grid(alpha=0.25)
+
+        else:
+
+            ax2.text(
+                0.5, 0.5,
+                "Se necesitan al menos 5 registros.",
+                ha="center",
+                va="center"
+            )
+
+        ax2.set_title(
+            "2. Regresión parcial: riego y rendimiento",
+            fontweight="bold"
+        )
+
+        plt.tight_layout()
+
+        st.pyplot(
+            fig2,
+            use_container_width=True
+        )
+
+        plt.close(fig2)
 
 
     # -------------------------------------------------
     # GRAFICA 3: COMPARACION DE TRATAMIENTOS
     # -------------------------------------------------
 
-    if "tipo_tratamiento" in df.columns:
+    col3, col4 = st.columns(2)
+
+    with col3:
+
+        fig3, ax3 = plt.subplots(figsize=(7, 5))
 
         sns.boxplot(
-            data=df,
+            data=df_filtrado,
             x="tipo_tratamiento",
             y="rendimiento_ton",
-            ax=axes[1, 0]
+            ax=ax3
         )
 
-        axes[1, 0].set_title(
+        ax3.set_title(
             "3. Rendimiento por tipo de tratamiento",
             fontweight="bold"
         )
 
-        axes[1, 0].set_xlabel(
-            "Tipo de tratamiento"
-        )
+        ax3.set_xlabel("Tipo de tratamiento")
 
-        axes[1, 0].set_ylabel(
-            "Rendimiento (ton/ha)"
-        )
+        ax3.set_ylabel("Rendimiento (ton/ha)")
 
-        axes[1, 0].tick_params(
+        ax3.tick_params(
             axis="x",
             rotation=15
         )
 
-    else:
+        plt.tight_layout()
 
-        axes[1, 0].text(
-            0.5,
-            0.5,
-            "No existe la columna tipo_tratamiento",
-            ha="center",
-            va="center"
-        )
-
-        axes[1, 0].set_title(
-            "3. Comparación de tratamientos"
-        )
-
-
-    # -------------------------------------------------
-    # GRAFICA 4: HISTOGRAMA DE RESIDUOS
-    # -------------------------------------------------
-
-    sns.histplot(
-        residuos,
-        kde=True,
-        stat="density",
-        ax=axes[1, 1],
-        label="Residuos"
-    )
-
-    media = residuos.mean()
-
-    desviacion = residuos.std(ddof=1)
-
-    if desviacion > 0:
-
-        x_normal = np.linspace(
-            residuos.min(),
-            residuos.max(),
-            200
-        )
-
-        y_normal = stats.norm.pdf(
-            x_normal,
-            media,
-            desviacion
-        )
-
-        axes[1, 1].plot(
-            x_normal,
-            y_normal,
-            linestyle="--",
-            label="Distribución normal"
-        )
-
-    axes[1, 1].set_title(
-        "4. Distribución de los residuos",
-        fontweight="bold"
-    )
-
-    axes[1, 1].set_xlabel(
-        "Residuos"
-    )
-
-    axes[1, 1].set_ylabel(
-        "Densidad"
-    )
-
-    axes[1, 1].legend()
-
-
-    # -------------------------------------------------
-    # PRESENTACION DEL PANEL
-    # -------------------------------------------------
-
-    fig.suptitle(
-        "ANÁLISIS Y DIAGNÓSTICO DEL MODELO OLS",
-        fontsize=16,
-        fontweight="bold"
-    )
-
-    plt.tight_layout(
-        rect=[0, 0, 1, 0.95],
-        h_pad=3.0,
-        w_pad=2.0
-    )
-
-    st.pyplot(
-        fig,
-        use_container_width=True
-    )
-
-    plt.close(fig)
-
-    st.caption(
-        "Panel de diagnóstico: correlación, regresión parcial, "
-        "comparación de tratamientos y distribución de residuos."
-    )
-
-    st.divider()
-
-
-    # =================================================
-    # 9. FORMULARIO DE PREDICCION
-    # =================================================
-
-    st.markdown(
-        '<p class="section-title">🔮 Predicción del rendimiento</p>',
-        unsafe_allow_html=True
-    )
-
-    st.write(
-        "Introduce las condiciones de una parcela para estimar "
-        "su rendimiento agrícola."
-    )
-
-    with st.form("formulario_prediccion"):
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-
-            riego = st.number_input(
-                "💧 Volumen de riego (m³/ha)",
-                min_value=0.0,
-                value=150.0,
-                step=5.0
-            )
-
-        with col2:
-
-            fertilizante = st.number_input(
-                "🌾 Fertilizante (kg)",
-                min_value=0.0,
-                value=80.0,
-                step=5.0
-            )
-
-        with col3:
-
-            temperatura = st.number_input(
-                "🌡️ Temperatura (°C)",
-                min_value=0.0,
-                value=28.0,
-                step=1.0
-            )
-
-        ejecutar = st.form_submit_button(
-            "🔍 Calcular rendimiento",
+        st.pyplot(
+            fig3,
             use_container_width=True
         )
 
-
-    # =================================================
-    # 10. HISTORIAL DE PREDICCIONES
-    # =================================================
-
-    if "historial" not in st.session_state:
-
-        st.session_state.historial = []
+        plt.close(fig3)
 
 
-    # =================================================
-    # 11. RESULTADOS DE LA PREDICCION
-    # =================================================
+    # -------------------------------------------------
+    # GRAFICA 4: DISTRIBUCION DE RESIDUOS
+    # -------------------------------------------------
 
-    if ejecutar:
+    with col4:
 
-        nuevos_datos = pd.DataFrame({
-            "volumen_riego": [riego],
-            "fertilizante_kg": [fertilizante],
-            columna_temperatura: [temperatura]
-        })
+        fig4, ax4 = plt.subplots(figsize=(7, 5))
 
-        nuevos_datos = sm.add_constant(
-            nuevos_datos,
-            has_constant="add"
+        X_filtrado = sm.add_constant(
+            df_filtrado[variables]
         )
 
-        resultado = modelo.get_prediction(
-            nuevos_datos
+        predicciones_filtradas = modelo.predict(
+            X_filtrado
         )
 
-        resumen = resultado.summary_frame(
-            alpha=0.05
+        residuos_filtrados = (
+            df_filtrado["rendimiento_ton"] -
+            predicciones_filtradas
         )
 
-        rendimiento = resumen["mean"].iloc[0]
+        sns.histplot(
+            residuos_filtrados,
+            kde=True,
+            stat="density",
+            ax=ax4,
+            label="Residuos"
+        )
 
-        limite_inferior = resumen["obs_ci_lower"].iloc[0]
+        media = residuos_filtrados.mean()
 
-        limite_superior = resumen["obs_ci_upper"].iloc[0]
+        desviacion = residuos_filtrados.std(ddof=1)
 
+        if desviacion > 0:
 
-        # Guardar historial
-
-        st.session_state.historial.append({
-
-            "Volumen de riego": riego,
-
-            "Fertilizante": fertilizante,
-
-            "Temperatura": temperatura,
-
-            "Rendimiento estimado": round(
-                rendimiento, 2
-            ),
-
-            "Límite inferior": round(
-                limite_inferior, 2
-            ),
-
-            "Límite superior": round(
-                limite_superior, 2
+            x_normal = np.linspace(
+                residuos_filtrados.min(),
+                residuos_filtrados.max(),
+                200
             )
 
-        })
-
-
-        st.divider()
-
-        st.markdown(
-            '<p class="section-title">📈 Resultado de la predicción</p>',
-            unsafe_allow_html=True
-        )
-
-        r1, r2, r3 = st.columns(3)
-
-        r1.metric(
-            "Rendimiento estimado",
-            f"{rendimiento:.2f} ton/ha"
-        )
-
-        r2.metric(
-            "Límite inferior (95%)",
-            f"{limite_inferior:.2f} ton/ha"
-        )
-
-        r3.metric(
-            "Límite superior (95%)",
-            f"{limite_superior:.2f} ton/ha"
-        )
-
-        st.success(
-            "La predicción del rendimiento se realizó correctamente."
-        )
-
-        st.info(
-            "El intervalo representa la predicción del 95% "
-            "para una observación individual."
-        )
-
-
-        # Comprobar rangos
-
-        fuera_de_rango = []
-
-        valores = {
-
-            "volumen_riego": riego,
-
-            "fertilizante_kg": fertilizante,
-
-            columna_temperatura: temperatura
-
-        }
-
-        for nombre, valor in valores.items():
-
-            minimo = df[nombre].min()
-
-            maximo = df[nombre].max()
-
-            if valor < minimo or valor > maximo:
-
-                fuera_de_rango.append(
-                    f"{nombre}: {minimo:.2f} - {maximo:.2f}"
-                )
-
-        if fuera_de_rango:
-
-            st.warning(
-                "Algunos valores están fuera del rango observado "
-                "en el dataset. La predicción puede ser menos confiable.\n\n"
-                + "\n".join(fuera_de_rango)
+            y_normal = stats.norm.pdf(
+                x_normal,
+                media,
+                desviacion
             )
 
+            ax4.plot(
+                x_normal,
+                y_normal,
+                linestyle="--",
+                label="Distribución normal"
+            )
 
-    # =================================================
-    # 12. HISTORIAL Y DESCARGA
-    # =================================================
-
-    st.divider()
-
-    st.markdown(
-        '<p class="section-title">📋 Historial de predicciones</p>',
-        unsafe_allow_html=True
-    )
-
-    if st.session_state.historial:
-
-        historial_df = pd.DataFrame(
-            st.session_state.historial
+        ax4.set_title(
+            "4. Distribución de los residuos",
+            fontweight="bold"
         )
 
-        st.dataframe(
-            historial_df,
-            use_container_width=True,
-            hide_index=True
-        )
+        ax4.set_xlabel("Residuos")
 
-        st.download_button(
-            "📥 Descargar historial CSV",
+        ax4.set_ylabel("Densidad")
 
-            data=historial_df.to_csv(
-                index=False
-            ).encode("utf-8-sig"),
+        ax4.legend()
 
-            file_name="historial_predicciones.csv",
+        plt.tight_layout()
 
-            mime="text/csv"
-        )
-
-        if st.button("🗑️ Limpiar historial"):
-
-            st.session_state.historial = []
-
-            st.rerun()
-
-    else:
-
-        st.info(
-            "Todavía no hay predicciones registradas. "
-            "Realiza una predicción para comenzar el historial."
-        )
-
-
-    # =================================================
-    # 13. ECUACION Y RESUMEN ESTADISTICO
-    # =================================================
-
-    st.divider()
-
-    st.markdown(
-        '<p class="section-title">🧮 Información estadística</p>',
-        unsafe_allow_html=True
-    )
-
-    coeficientes = modelo.params
-
-    ecuacion = (
-
-        f"Rendimiento = {coeficientes['const']:.4f}"
-
-        f" + ({coeficientes['volumen_riego']:.4f} × Riego)"
-
-        f" + ({coeficientes['fertilizante_kg']:.4f} × Fertilizante)"
-
-        f" + ({coeficientes[columna_temperatura]:.4f} × Temperatura)"
-
-    )
-
-    st.code(ecuacion)
-
-    with st.expander("Consultar resumen estadístico OLS"):
-
-        st.text(
-            modelo.summary()
-        )
-
-    with st.expander("Consultar dataset completo"):
-
-        st.dataframe(
-            df,
+        st.pyplot(
+            fig4,
             use_container_width=True
         )
 
+        plt.close(fig4)
+
 
     # =================================================
-    # 14. PIE DE PAGINA
+    # 9. PIE DE PAGINA
     # =================================================
 
     st.divider()
@@ -821,7 +563,7 @@ except FileNotFoundError:
 
     st.error(
         "No se encontró telemetria_parcelas.csv. "
-        "Verifica que esté en la misma carpeta."
+        "Verifica que esté en la misma carpeta que app_fase3.py."
     )
 
 except Exception as e:
